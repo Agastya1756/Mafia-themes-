@@ -106,7 +106,7 @@ const LEGEND = { Easy: 'Good for new hosts', Average: 'Requires some experience'
   Hard: "Challenging, even for experienced hosts. Don't host it until you've played it a couple of times.",
   Special: 'Requires explicit permission to host' };
 const INTRO = { approved: 'Themes approved for hosting. Rate and review the ones you have played.',
-  community: 'Themes added by players that are not approved yet. Your ratings help show which ones are worth approving.' };
+  community: 'Themes added by players that are not approved yet.' };
 const span = a => { if (!a || !a.length) return 'Players not listed'; const s = [...a].sort((x, y) => x - y), o = []; let i = 0;
   while (i < s.length) { let j = i; while (s[j + 1] === s[j] + 1) j++; o.push(j > i ? `${s[i]}–${s[j]}` : `${s[i]}`); i = j + 1; }
   return o.join(', ') + ' players'; };
