@@ -18,7 +18,8 @@ jobs:
         env:
           URL: ${{ secrets.SUPABASE_URL }}
           KEY: ${{ secrets.SUPABASE_KEY }}
-        run: curl --fail --silent --show-error "$URL/rest/v1/themes?select=id&limit=1" -H "apikey: $KEY"
+        run: |
+          curl --fail --silent --show-error "$URL/rest/v1/themes?select=id&limit=1" -H "apikey: $KEY"
 
       - name: Keep this repository active
         run: |
