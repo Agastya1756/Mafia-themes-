@@ -1,0 +1,30 @@
+name: Keep Supabase awake
+
+on:
+  schedule:
+    - cron: '17 3 */3 * *'   # every 3 days, around 08:45 India time
+  workflow_dispatch:         # lets you run it by hand to test it
+
+permissions:
+  contents: write
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read one row from the database
+        env:
+          URL: ${{ secrets.SUPABASE_URL }}
+          KEY: ${{ secrets.SUPABASE_KEY }}
+        run: curl --fail --silent --show-error "$URL/rest/v1/themes?select=id&limit=1" -H "apikey: $KEY"
+
+      - name: Keep this repository active
+        run: |
+          if [ -z "$(git log --since='30 days ago' --format=%H -1)" ]; then
+            git config user.name "github-actions"
+            git config user.email "github-actions@users.noreply.github.com"
+            git commit --allow-empty -m "Keep scheduled workflow active"
+            git push
+          fi
