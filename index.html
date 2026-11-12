@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Theme Table: Mafia theme reviews</title>
+<style>
+:root{--felt:#17392b;--felt2:#0f2a1f;--ivory:#f3ecd9;--ink:#1d2a24;--mut:#6b705f;--brass:#b8892b;--line:#d8cfb6}
+*{box-sizing:border-box}
+body{margin:0;background:var(--felt);color:var(--ivory);font:16px/1.55 system-ui,sans-serif}
+h1,h2,h3{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:700;margin:0}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:18px 22px;background:var(--felt2)}
+h1{font-size:1.5rem}
+main{max-width:1000px;margin:0 auto;padding:22px}
+button,input,select,textarea{font:inherit}
+button{background:var(--brass);color:#1b1405;border:0;border-radius:6px;padding:8px 14px;cursor:pointer;font-weight:600}
+button.ghost{background:none;color:inherit;border:1px solid currentColor;opacity:.85}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,.card:focus-visible{outline:3px solid var(--brass);outline-offset:2px}
+input,select,textarea{width:100%;padding:9px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink)}
+.bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px}
+.bar input{flex:2;min-width:170px}.bar select{flex:1;min-width:140px;width:auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px}
+.card{position:relative;background:var(--ivory);color:var(--ink);border-radius:12px;padding:16px 16px 14px 74px;cursor:pointer;min-height:120px;box-shadow:0 2px 0 #0006}
+.card:hover{transform:translateY(-2px)}
+.idx{position:absolute;left:12px;top:12px;width:48px;text-align:center;font:700 1.6rem/1 Georgia,serif;border-right:1px solid var(--line);padding-right:10px}
+.idx small{display:block;color:var(--brass);font-size:1rem}
+.card h3{font-size:1.15rem}
+.mut{color:var(--mut);font-size:.9rem}
+.stars{color:var(--brass);letter-spacing:2px}
+dialog{background:var(--ivory);color:var(--ink);border:0;border-radius:14px;width:min(660px,94vw);max-height:90vh;padding:22px}
+dialog::backdrop{background:#000b}
+dialog .mut{color:var(--mut)}
+.rev{border-top:1px solid var(--line);padding:10px 0}
+.pick span{font-size:2rem;cursor:pointer;color:var(--line)}.pick span.on{color:var(--brass)}
+label{display:block;margin:12px 0 4px;font-weight:600}
+.empty{grid-column:1/-1;padding:20px;border:1px dashed var(--line);border-radius:10px}
+@media (prefers-reduced-motion:reduce){.card:hover{transform:none}}
+</style>
+</head>
+<body>
+<header><h1>Theme Table</h1><div id="auth"></div></header>
+<main>
+  <div class="bar">
+    <input id="q" type="search" placeholder="Search by theme or creator" aria-label="Search themes">
+    <select id="sort" aria-label="Sort themes">
+      <option value="avg_rating">Top rated</option>
+      <option value="review_count">Most reviewed</option>
+      <option value="created_at">Newest</option>
+    </select>
+    <button id="add">Add a theme</button>
+  </div>
+  <div id="list" class="grid"></div>
+</main>
+
+<dialog id="dlg"></dialog>
+<dialog id="addDlg">
+  <h2>Add a theme</h2>
+  <form id="addForm">
+    <label for="n">Theme name</label><input id="n" name="name" required minlength="2" maxlength="80">
+    <label for="c">Creator or host</label><input id="c" name="creator" maxlength="60">
+    <label for="d">What is it about?</label><textarea id="d" name="description" rows="4" maxlength="1000"></textarea>
+    <label for="l">Link to the setup or game thread</label><input id="l" name="link" type="url" maxlength="300">
+    <p style="margin-top:16px"><button>Save theme</button> <button type="button" class="ghost" id="cancelAdd">Cancel</button></p>
+  </form>
+</dialog>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+// 1) Paste your own values here (Supabase > Project Settings > API). The anon key is safe to be public.
+const SUPABASE_URL = 'https://oyjasgafpcggmtpkiivm.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_qZEBleZ3yjjO7N4BHLaQxA_nj-BGJKF';
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const stars = n => { n = Math.round(n); return '★'.repeat(n) + '☆'.repeat(5 - n); };
+const safeLink = u => /^https?:\/\//i.test(u || '') ? u : '';
+let user = null, themes = [];
+
+function renderAuth() {
+  $('#auth').innerHTML = user
+    ? `<span>${esc(user.user_metadata?.full_name || 'Signed in')}</span> <button class="ghost" id="out">Log out</button>`
+    : '<button id="in">Log in with Discord</button>';
+  if ($('#in')) $('#in').onclick = () => sb.auth.signInWithOAuth({ provider: 'discord', options: { redirectTo: location.origin + location.pathname } });
+  if ($('#out')) $('#out').onclick = () => sb.auth.signOut();
+}
+
+async function load() {
+  const { data, error } = await sb.from('theme_stats').select('*');
+  if (error) { $('#list').innerHTML = `<div class="empty">Could not load themes: ${esc(error.message)}</div>`; return; }
+  themes = data; render();
+}
+
+function render() {
+  const q = $('#q').value.toLowerCase(), k = $('#sort').value;
+  const rows = themes
+    .filter(t => (t.name + ' ' + (t.creator || '')).toLowerCase().includes(q))
+    .sort((a, b) => k === 'created_at' ? b.created_at.localeCompare(a.created_at) : Number(b[k]) - Number(a[k]));
+  $('#list').innerHTML = rows.map(t => `
+    <div class="card" tabindex="0" role="button" data-id="${t.id}">
+      <div class="idx">${Number(t.avg_rating) ? Number(t.avg_rating).toFixed(1) : '–'}<small>★</small></div>
+      <h3>${esc(t.name)}</h3>
+      <div class="mut">by ${esc(t.creator || 'unknown')}, ${t.review_count} review${t.review_count == 1 ? '' : 's'}</div>
+      <p>${esc((t.description || '').slice(0, 110))}</p>
+    </div>`).join('') || '<div class="empty">No themes match. Add the first one with “Add a theme”.</div>';
+}
+
+async function openTheme(id) {
+  const t = themes.find(x => x.id == id);
+  const { data } = await sb.from('reviews').select('*').eq('theme_id', id).order('created_at', { ascending: false });
+  const revs = data || [];
+  const mine = user && revs.find(r => r.user_id === user.id);
+  let pick = mine ? mine.rating : 0;
+  const d = $('#dlg');
+  d.innerHTML = `
+    <button class="ghost" style="float:right" id="x">Close</button>
+    <h2>${esc(t.name)}</h2>
+    <div class="mut">by ${esc(t.creator || 'unknown')}</div>
+    <div class="stars">${stars(t.avg_rating)} <span class="mut">${Number(t.avg_rating) || '–'} from ${t.review_count} review(s)</span></div>
+    <p>${esc(t.description || '')}</p>
+    ${safeLink(t.link) ? `<p><a href="${esc(safeLink(t.link))}" target="_blank" rel="noopener">Open the setup or game thread</a></p>` : ''}
+    <h3 style="margin-top:18px">${mine ? 'Your review' : 'Write a review'}</h3>
+    ${user ? `
+      <div class="pick" id="pick" aria-label="Your rating">${[1,2,3,4,5].map(i => `<span data-v="${i}">★</span>`).join('')}</div>
+      <textarea id="body" rows="3" maxlength="2000" placeholder="How did it play? Balance, flavour, fun">${esc(mine?.body || '')}</textarea>
+      <p><button id="save">${mine ? 'Update review' : 'Post review'}</button> ${mine ? '<button class="ghost" id="del">Delete my review</button>' : ''}</p>`
+      : '<p class="mut">Log in with Discord to rate this theme.</p>'}
+    <h3 style="margin-top:18px">Reviews</h3>
+    ${revs.map(r => `<div class="rev"><span class="stars">${stars(r.rating)}</span> <b>${esc(r.author)}</b>
+      <span class="mut">${new Date(r.created_at).toLocaleDateString()}</span><div>${esc(r.body || '')}</div></div>`).join('') || '<p class="mut">No reviews yet.</p>'}`;
+
+  const paint = () => d.querySelectorAll('#pick span').forEach(s => s.classList.toggle('on', +s.dataset.v <= pick));
+  d.querySelectorAll('#pick span').forEach(s => s.onclick = () => { pick = +s.dataset.v; paint(); });
+  paint();
+  d.querySelector('#x').onclick = () => d.close();
+  const done = async () => { await load(); openTheme(id); };
+  const save = d.querySelector('#save');
+  if (save) save.onclick = async () => {
+    if (!pick) return alert('Choose a star rating first.');
+    const { error } = await sb.from('reviews').upsert(
+      { theme_id: id, user_id: user.id, rating: pick, body: d.querySelector('#body').value.trim() },
+      { onConflict: 'theme_id,user_id' });
+    error ? alert(error.message) : done();
+  };
+  const del = d.querySelector('#del');
+  if (del) del.onclick = async () => {
+    if (!confirm('Delete your review?')) return;
+    const { error } = await sb.from('reviews').delete().eq('id', mine.id);
+    error ? alert(error.message) : done();
+  };
+  if (!d.open) d.showModal();
+}
+
+$('#list').onclick = e => { const c = e.target.closest('.card'); if (c) openTheme(c.dataset.id); };
+$('#list').onkeydown = e => { if (e.key === 'Enter') { const c = e.target.closest('.card'); if (c) openTheme(c.dataset.id); } };
+$('#q').oninput = render;
+$('#sort').onchange = render;
+$('#add').onclick = () => user ? $('#addDlg').showModal() : alert('Log in with Discord to add a theme.');
+$('#cancelAdd').onclick = () => $('#addDlg').close();
+$('#addForm').onsubmit = async e => {
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target));
+  const { error } = await sb.from('themes').insert({ name: f.name.trim(), creator: f.creator.trim(), description: f.description.trim(), link: f.link.trim() });
+  if (error) return alert(error.message);
+  e.target.reset(); $('#addDlg').close(); load();
+};
+
+sb.auth.onAuthStateChange((_e, s) => { user = s?.user || null; renderAuth(); });
+load();
+</script>
+</body>
+</html>
